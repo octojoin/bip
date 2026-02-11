@@ -98,8 +98,6 @@ Sender pay require more than 1 output so silent payment addresses will be the be
 
 ==Implementation==
 
-Pseudocode: https://uncensoredtech.substack.com/p/octojoin
-
 Proof of Concept: https://github.com/octojoin/poc
 
 ==Backwards Compatibility==
