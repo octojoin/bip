@@ -6,7 +6,7 @@
   Status: Draft
   Type: Standards Track
   Created: 2024-09-25
-  License: MIT
+  License: BSD-2-Clause
 
 
 ==Abstract==
