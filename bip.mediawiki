@@ -64,7 +64,7 @@ An algorithm requiring some values from the user to create the transaction or no
 * Number of outputs (default: 2)
 * Equal amounts in inputs (default: false)
 
-''Equal amounts in inputs'' controls whether the selected inputs are constrained to equal (or near-equal) values, mimicking the uniform inputs of a coinjoin. It defaults to false because, outside a coordinated equal-value coinjoin, equal-valued inputs are themselves a fingerprint; varied input amounts blend better with ordinary transactions.
+''Equal amounts in inputs'' controls whether the selected inputs are constrained to equal (or near-equal) values. It is disabled by default.
 
 Analysis of different decoy selection algorithms used in Monero: https://github.com/monero-project/research-lab/issues/99
 
