@@ -68,6 +68,54 @@ Input selection is important in Octojoin, although not the same as decoy selecti
 
 Transaction MUST have at least 3 inputs, all swapped except one. It SHOULD avoid mixed input types and use random wallet fingerprints, including BIP 69. It SHOULD use inputs of similar age. Some inputs SHOULD be recent UTXOs. All outputs MUST use the same script type.
 
+====Decomposition of Amounts====
+
+To hide the payment value it is split into standard denominations so that no single output reveals the amount being sent. Implementations use the following denominations, in BTC:
+
+ 1.0, 0.5, 0.2, 0.1, 0.05, 0.02, 0.01, 0.005, 0.002, 0.001   (100000000 ... 100000 sat)
+
+The amount is decomposed greedily:
+
+# For each denomination from largest to smallest, while it is less than or equal to the remaining amount, emit it as an output value and subtract it from the remaining amount.
+# Distribute the resulting denominations across the requested number of outputs (default 2) round-robin. For a silent payment recipient each output is a fresh address derived from the recipient's silent payment code (BIP 352), and the denominations are grouped round-robin into the requested number of outputs.
+
+'''Value conservation'''
+
+The sum of the output denominations MUST equal the payment amount. If a remainder is left after the greedy step:
+
+* a remainder above the dust threshold (546 sat) MAY be emitted as its own output;
+* a remainder at or below the dust threshold MUST be folded into one of the existing denomination outputs, never dropped.
+
+Dropping a sub-dust remainder silently donates it to the miner fee and underpays the recipient, and MUST be avoided. A payment that does not exceed the dust threshold cannot be decomposed into a valid output and MUST be rejected.
+
+Examples:
+
+ 0.003 BTC  -> [0.002, 0.001]           (exact sum of denominations)
+ 0.0015 BTC -> [0.001, 0.0005]          (0.0005 is a non-round remainder output)
+ 0.008 BTC  -> [0.005, 0.002, 0.001]    (exact sum of denominations)
+
+Most payment amounts are not an exact sum of standard denominations, so the value below the smallest denomination (0.001) is emitted as a non-round output (the 0.0005 above), and round-robin distribution can sum denominations into non-round per-output amounts (e.g. 0.0035 -> 0.0025 + 0.001). This is expected and desirable: outputs that are always exact round denominations would themselves fingerprint the transaction, whereas non-round outputs let it blend with ordinary payments. Implementations MUST NOT pad or round the payment amount to force round outputs.
+
+====Input Selection and the Unnecessary Input Heuristic====
+
+The unnecessary input heuristic (UIH) flags a transaction that contains more input value than required to fund its non-change outputs: if any single input can be removed while the remaining inputs still cover the payment plus fee, that input is "unnecessary". Ordinary wallets avoid this through coin selection, so an unnecessary input is a fingerprint that the transaction is not a simple payment.
+
+Because Octojoin deliberately adds swapped inputs, naive selection can trip this heuristic. Implementations SHOULD size and select inputs so that no input is unnecessary. For n inputs funding a payment P with fee F:
+
+ (sum of all inputs) - min(inputs) < P + F
+
+so that dropping any single input leaves the transaction underfunded, making it indistinguishable from an ordinary transaction that combines several small coins.
+
+A changeless transaction is the strongest result: when the inputs sum to P + F there is no change output to identify and no unnecessary input. Where change is unavoidable, the change output SHOULD equal a standard denomination so that it is indistinguishable from a payment output. A small, odd-valued change output both reveals itself as change and, together with oversized inputs, trips the UIH.
+
+====Fee Estimation====
+
+The fee is derived from the virtual size of the constructed transaction:
+
+ fee = ceil(vsize * feeRate)
+
+where vsize is estimated as overhead + (numInputs * input vbytes) + (numOutputs * output vbytes), and numOutputs includes the change output when one is present. The exact per-input and per-output vbyte constants depend on the script type and are implementation specific.
+
 ==Rationale==
 
 ====Default Values====
