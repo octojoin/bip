@@ -51,7 +51,7 @@ Do off-chain swaps (e.g. statechain, submarine swaps, or coinswap) to obtain UTX
 
 '''Outputs'''
 
-Silent payment ([[bip-0352.mediawiki|BIP 352]]) addresses are RECOMMENDED for the outputs: the sender derives a fresh, unlinkable output address for each denomination with no interaction from the recipient. Implementations MAY instead accept multiple plain recipient addresses, but each MUST be a fresh address that is not otherwise linkable to the recipient; reusing or linking those addresses defeats the unlinkability that silent payments provide automatically.
+Silent payment ([[bip-0352.mediawiki|BIP 352]]) addresses are RECOMMENDED for the outputs: the sender derives a fresh, unlinkable output address for each payment output with no interaction from the recipient. Implementations MAY instead accept multiple plain recipient addresses, but each MUST be a fresh address that is not otherwise linkable to the recipient; reusing or linking those addresses defeats the unlinkability that silent payments provide automatically.
 
 '''Multiple Outputs and Different Interpretations'''
 
@@ -72,45 +72,62 @@ Input selection is important in Octojoin, although not the same as decoy selecti
 
 Transaction MUST have at least 3 inputs, all swapped except one. It SHOULD avoid mixed input types and use random wallet fingerprints, including BIP 69. It SHOULD use inputs of similar age. Some inputs SHOULD be recent UTXOs. All outputs, including the change output, MUST use the same script type; when silent payment outputs are used (P2TR) the change output MUST also be P2TR.
 
-====Decomposition of Amounts====
+====Splitting the Amount====
 
-To hide the payment value it is split into standard denominations so that no single output reveals the amount being sent. Implementations use the following denominations, in BTC:
+The payment amount is split into one output per recipient address, as many as the requested number of outputs (default 2). The split is random, so that no output shows the amount and no output is a round value that marks it as a payment. It is made after the inputs are selected, because one of its rules depends on the change.
 
- 1.0, 0.5, 0.2, 0.1, 0.05, 0.02, 0.01, 0.005, 0.002, 0.001   (100000000 ... 100000 sat)
+All values are in satoshis. Let P be the payment amount, k the number of payment outputs and D the dust threshold, which is the largest dust threshold of the payment output script types (294 sat for P2WPKH and 330 sat for P2TR at the default dust relay fee). Implementations MAY use a higher dust threshold, such as the 546 sat that Electrum uses for every script type. Let
 
-The amount is decomposed greedily:
+ lo = max(D + 1, ceil(P / (2k)))
+ hi = floor(3P / (2k))
 
-# For each denomination from largest to smallest, while it is less than or equal to the remaining amount, emit it as an output value and subtract it from the remaining amount.
-# Distribute the resulting denominations across the requested number of outputs (default 2) round-robin. For a silent payment recipient each output is a fresh address derived from the recipient's silent payment code (BIP 352), and the denominations are grouped round-robin into the requested number of outputs.
+so that every payment output is between half and one and a half times an even share of the payment. A value is round when it is a multiple of 1,000 sat.
 
-'''Value conservation'''
+The payment output values x<sub>1</sub>, ..., x<sub>k</sub> MUST
 
-The sum of the output denominations MUST equal the payment amount. The dust threshold referenced below is the minimum non-dust value for the output script type and fee rate (for example 294 sat for P2WPKH and 330 sat for P2TR at typical fee rates), not a fixed constant. If a remainder is left after the greedy step:
+* add up to P,
+* each lie between lo and hi inclusive,
+* be different from each other and from the change, and
+* not be round.
 
-* a remainder above the dust threshold MAY be emitted as its own output;
-* a remainder at or below the dust threshold MUST be folded into one of the existing denomination outputs, never dropped.
+No part of the amount may be dropped or moved to the fee. A payment of at most D sat, or of less than k(D + 1) + k(k - 1)/2 sat, cannot be split this way and MUST be rejected.
 
-Dropping a sub-dust remainder silently donates it to the miner fee and underpays the recipient, and MUST be avoided. A payment that does not exceed the dust threshold cannot be decomposed into a valid output and MUST be rejected.
+Implementations SHOULD pick uniformly at random among the splits that follow these rules and the rule for the change in the next section, using a cryptographically secure source of randomness. The following procedure does so.
 
-Examples:
+# Let R = P - k * lo.
+# Draw k - 1 integers uniformly at random between 0 and R inclusive, and sort them as r<sub>1</sub> <= ... <= r<sub>k-1</sub>. Let r<sub>0</sub> = 0 and r<sub>k</sub> = R.
+# Let x<sub>i</sub> = lo + r<sub>i</sub> - r<sub>i-1</sub> for i from 1 to k.
+# If the values break any of the rules, draw again.
 
- 0.003 BTC  -> [0.002, 0.001]           (exact sum of denominations)
- 0.0015 BTC -> [0.001, 0.0005]          (0.0005 is a non-round remainder output)
- 0.008 BTC  -> [0.005, 0.002, 0.001]    (exact sum of denominations)
+For example, 0.003 BTC in 2 outputs gives two values between 0.00075 and 0.00225 BTC that add up to 0.003 BTC, such as 0.00131847 and 0.00168153 BTC. The same amount in 3 outputs gives three values between 0.0005 and 0.0015 BTC.
 
-Most payment amounts are not an exact sum of standard denominations, so the value below the smallest denomination (0.001) is emitted as a non-round output (the 0.0005 above), and round-robin distribution can sum denominations into non-round per-output amounts (e.g. 0.0035 -> 0.0025 + 0.001). This is expected and desirable: outputs that are always exact round denominations would themselves fingerprint the transaction, whereas non-round outputs let it blend with ordinary payments. Implementations MUST NOT pad or round the payment amount to force round outputs.
+Implementations MAY derive the randomness from a wallet secret and the payment request, so that planning the same payment again gives the same transaction and the user signs what was shown.
 
 ====Input Selection and the Unnecessary Input Heuristic====
 
-The unnecessary input heuristic (UIH) flags a transaction that contains more input value than required to fund its non-change outputs: if any single input can be removed while the remaining inputs still cover the payment plus fee, that input is "unnecessary". Ordinary wallets avoid this through coin selection, so an unnecessary input is a fingerprint that the transaction is not a simple payment.
+The unnecessary input heuristic (UIH) flags a transaction in which an input could be removed while the remaining inputs still cover the payment and the fee. Ordinary wallets do not add such an input, so an unnecessary input shows that the transaction is not a simple payment.
 
-Because Octojoin deliberately adds swapped inputs, naive selection can trip this heuristic. Implementations SHOULD size and select inputs so that no input is unnecessary. For n inputs funding a payment P with fee F:
+Because Octojoin deliberately adds swapped inputs, naive selection can trip this heuristic. For n inputs funding a payment P with fee F, no input is unnecessary when
 
  (sum of all inputs) - min(inputs) < P + F
 
-so that dropping any single input leaves the transaction underfunded, making it indistinguishable from an ordinary transaction that combines several small coins.
+which holds exactly when the change is smaller than every input, or when there is no change output.
 
-A changeless transaction is the strongest result: when the inputs sum to P + F there is no change output to identify and no unnecessary input. In practice an exact P + F match is rarely achievable from discrete UTXOs, so a UIH-clean change output (smaller than every input, as above) is the practical target. Where change is present, it SHOULD be indistinguishable from the payment outputs, with a similar magnitude and the same script type, rather than a round denomination; a small or odd-valued change output that stands apart from the payment outputs reveals itself as change.
+Implementations SHOULD consider every selection of numInputs - 1 swapped coins and one other coin that funds the payment, and prefer them in this order.
+
+# Selections without a change output, which leave no change to find and no unnecessary input.
+# Selections whose change is smaller than every input and lies between lo and hi, so that no input is unnecessary and the change has the size of a payment output.
+# Selections whose change is smaller than every input.
+# Selections whose change lies between lo and hi.
+# Any other selection that funds the payment.
+
+Implementations SHOULD pick at random among the selections of the best rank. A fixed choice such as the smallest change would make the change smaller than the payment outputs most of the time.
+
+The change MUST NOT be round. When it would be, implementations move 1 sat from the change to the fee. A change at or below the dust threshold is not created, and its value goes to the fee. The change uses a fresh address of the same script type as the payment outputs.
+
+The same heuristic is used to find the change. In a transaction where every input is needed, an observer takes an output that is smaller than every input for the change, and the smallest output when there are several of them (UIH1 in [https://eprint.iacr.org/2022/589.pdf Unnecessary Input Heuristics & PayJoin Transactions]). When the change is smaller than every input, the split SHOULD put at least one payment output below every input as well, so that the change is not the only output the heuristic can point to. The split is drawn at random within that rule, so the heuristic points at a payment output or at the change depending on where the values fall.
+
+When no selection avoids an unnecessary input, or the change cannot be made to blend in, implementations SHOULD warn the user before paying.
 
 ====Fee Estimation====
 
@@ -118,7 +135,7 @@ The fee is derived from the virtual size of the constructed transaction:
 
  fee = ceil(vsize * feeRate)
 
-where vsize is estimated as overhead + (numInputs * input vbytes) + (numOutputs * output vbytes), and numOutputs includes the change output when one is present. The exact per-input and per-output vbyte constants depend on the script type and are implementation specific.
+where vsize is estimated as overhead + (numInputs * input vbytes) + (numOutputs * output vbytes), and numOutputs includes the change output when one is present. The exact per-input and per-output vbyte constants depend on the script type and are implementation specific. The fee is 1 sat higher when the change would otherwise be round, and includes the whole remainder when there is no change output.
 
 ==Rationale==
 
@@ -140,6 +157,14 @@ xychart-beta
 
 Transactions that already use 3 inputs and 2 outputs will serve as the anonymity set for octojoin transactions with default values. It is possible to change defaults and use a higher number of inputs and outputs.
 
+====Random Split====
+
+Earlier drafts split the amount into standard denominations from 0.001 to 1 BTC. Those outputs are round, and chain analysis takes round outputs for payments, which leaves the change as the only output that is not round. An amount with fewer denominations than outputs, such as 0.002 BTC in 2 outputs, was also cut into equal values, and two equal outputs next to a third show which outputs are the payment ([https://github.com/octojoin/bip/issues/4 issue 4]). Implementations also differed in how they filled the outputs in that case.
+
+A random split into values of similar size that are not round removes both signals, and the rules for the change make it look like one more payment output. Together with the rule on unnecessary inputs and one script type for every output, this keeps the heuristics that payjoin ([[bip-0078.mediawiki|BIP 78]]) breaks, common input ownership and change found by its script type or a round amount, from working on Octojoin transactions either.
+
+The range from half to one and a half even shares keeps every output well above dust and keeps one output from carrying most of the payment, while leaving many possible values. With 2 outputs, either one can be anything from 25% to 75% of the amount.
+
 ====Swapped UTXOs====
 
 Swapping UTXOs off-chain will obscure the transaction's input ownership and history. It also adds more noise on-chain to make chain analysis difficult.
@@ -160,6 +185,7 @@ This is a new protocol and has no compatibility issues. It RECOMMENDS [[bip-0352
 
 * Metadata leak in swaps
 * User not careful while spending outputs created in Octojoin transaction
+* Round payment amounts. The payment outputs add up to the payment amount, so when it is round, adding up sets of outputs can find the payment outputs and with them the change. Recipients SHOULD request amounts that are not round.
 
 ==Acknowledgement==
 
