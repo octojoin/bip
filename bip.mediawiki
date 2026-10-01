@@ -65,7 +65,7 @@ An algorithm requiring some values from the user to create the transaction or no
 * Equal amounts in inputs (default: false)
 * Equal amounts in outputs (default: false)
 
-''Equal amounts in inputs'' controls whether the selected inputs are constrained to equal (or near-equal) values. It is disabled by default.
+''Equal amounts in inputs'' controls whether the selected inputs are constrained to equal (or near-equal) values, where the largest input is at most 10% larger than the smallest. It is disabled by default.
 
 ''Equal amounts in outputs'' splits the payment into outputs of equal value instead of at random. It is disabled by default.
 
@@ -125,6 +125,8 @@ Implementations SHOULD consider every selection of numInputs - 1 swapped coins a
 # Selections whose change is smaller than every input.
 # Selections whose change lies between lo and hi.
 # Any other selection that funds the payment.
+
+With equal amounts in inputs, selections whose inputs are near-equal come before all of these, and every swapped coin is a candidate rather than only the smallest ones. Implementations SHOULD warn the user when no selection has near-equal inputs.
 
 Implementations SHOULD pick at random among the selections of the best rank. A fixed choice such as the smallest change would make the change smaller than the payment outputs most of the time.
 
