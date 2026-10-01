@@ -63,8 +63,11 @@ An algorithm requiring some values from the user to create the transaction or no
 * Number of inputs (default: 3)
 * Number of outputs (default: 2)
 * Equal amounts in inputs (default: false)
+* Equal amounts in outputs (default: false)
 
 ''Equal amounts in inputs'' controls whether the selected inputs are constrained to equal (or near-equal) values. It is disabled by default.
+
+''Equal amounts in outputs'' splits the payment into outputs of equal value instead of at random. It is disabled by default.
 
 Analysis of different decoy selection algorithms used in Monero: https://github.com/monero-project/research-lab/issues/99
 
@@ -102,6 +105,8 @@ Implementations SHOULD pick uniformly at random among the splits that follow the
 For example, 0.003 BTC in 2 outputs gives two values between 0.00075 and 0.00225 BTC that add up to 0.003 BTC, such as 0.00131847 and 0.00168153 BTC. The same amount in 3 outputs gives three values between 0.0005 and 0.0015 BTC.
 
 Implementations MAY derive the randomness from a wallet secret and the payment request, so that planning the same payment again gives the same transaction and the user signs what was shown.
+
+With equal amounts in outputs, every payment output gets floor(P / k), and when P does not divide evenly, P mod k of them get 1 sat more. The rules on different and round values do not apply, and P MUST be at least k(D + 1). A change output next to equal payment outputs is the one output with a different value, so implementations SHOULD prefer selections without a change output, as above, and SHOULD warn the user when every selection leaves change.
 
 ====Input Selection and the Unnecessary Input Heuristic====
 
@@ -164,6 +169,8 @@ Earlier drafts split the amount into standard denominations from 0.001 to 1 BTC.
 A random split into values of similar size that are not round removes both signals, and the rules for the change make it look like one more payment output. Together with the rule on unnecessary inputs and one script type for every output, this keeps the heuristics that payjoin ([[bip-0078.mediawiki|BIP 78]]) breaks, common input ownership and change found by its script type or a round amount, from working on Octojoin transactions either.
 
 The range from half to one and a half even shares keeps every output well above dust and keeps one output from carrying most of the payment, while leaving many possible values. With 2 outputs, either one can be anything from 25% to 75% of the amount.
+
+Equal amounts in outputs stay available as an option for users who want them. Next to a change output, equal outputs show which output is the change, so the option comes with a preference for selections without change and a warning when there is change.
 
 ====Swapped UTXOs====
 
